@@ -8,6 +8,219 @@ editor_options:
 ---
 
 ```{r}
+# install.packages("ISLR")
+library("ISLR")
+library("tidyverse")
+library("knitr")
+
+data(College,package="ISLR")
+saveRDS(College, file = "College.rds")
 
 ```
+
+```{r exploratory}
+?College
+str(College)
+summary(College)
+```
+
+Regarding `Apps`, the mean is twice as high as the median, suggesting
+the data is left-skewed. By log-transforming the data, we reduce the
+effect of high numbers and hopefully make the model more robust.
+
+```{r preprocessing & splitting}
+College_processed <- College %>% 
+  mutate(Apps = log(Apps)) %>%
+  select(-Accept, -Enroll)
+
+n <- nrow(College_processed)
+idx <- sample(1:n, n%/%3*2)
+train = College_processed[idx,]
+test =  College_processed[-idx,]
+
+```
+
+# 2. Full Model
+
+```{r}
+full.lm <- lm(Apps ~ ., data = train)
+full.lm %>% summary()  
+full.lm %>% plot()  
+```
+
+The Residuals vs Fitted plot shows how poorly the model is performing.
+The red line not being straight is a sign, that the variance is not
+constant, which is also observableby the residual points being more
+spread out on the left hand side than the right end.\
+The QQ-Plot shows that the residuals are somewhat normally distributed.
+
+## Manual computation of the coefficients
+
+```{r}
+X <- model.matrix(Apps ~ ., data = train)
+# get the manual estimator
+full.estimator <- solve(t(X) %*% X) %*% (t(X) %*% train$Apps)
+
+# bind it to the coefficients of the lm function
+summary(full.lm) %>% .$coefficients %>% .[,1] %>% cbind(full.estimator)
+```
+
+The coefficients of the lm() function and the manual estimation are
+equal.\
+`PrivateYes` is a variable with highly significant coefficient of
+\~-0.5, meaning that a value of "Yes" negatively influences the
+response.
+
+## Predicting values
+
+```{r}
+plot(train$Apps, full.lm %>% predict(train) , xlim = c(0, 11), 
+     main="Observed vs predicted values (training data)", xlab="observed", ylab="predicted",
+     # ylim=c(0, 11)
+     )
+abline(coef = c(0,1), col="red")
+
+plot(test$Apps, full.lm %>% predict(test) , xlim = c(0, 11), 
+     main="Observed vs predicted values (test data)", xlab="observed", ylab="predicted",
+     # ylim=c(0, 11)
+     )
+abline(coef = c(0,1), col="red")
+```
+
+Visually, the variance of the predicted vs observed data points look
+similar in the plots of the training and the test data.
+
+```{r}
+get_rmse <- function(y, yhat){
+  N <- length(y)
+  y_minus_yhat <- (y - yhat)^2
+  avg_sum <- sum(y_minus_yhat)/N
+  sqrt(avg_sum)
+}
+
+paste(
+  "RMSE of training set:",
+  get_rmse(train$Apps, full.lm %>% predict(train)) %>% round(4),
+  " ---- RMSE of test set:",
+  get_rmse(test$Apps, full.lm %>% predict(test)) %>% round(4)
+)
+
+```
+
+The RMSE of the training set being lower than that of the test set alsp
+checks out.
+
+# 3. Slim model
+
+Manually removing all insignificant variables from the full model, we
+are left with:\
+- An Intercept that is not zero\
+- `Private`\
+- `F.Undergrad`\
+- `Outstate`\
+- `Room.Board`\
+- `Books`\
+- `PhD`\
+- `S.F.Ratio`\
+- `perc.alumni`\
+- `Expend`\
+- `Grad.Rate`
+
+```{r}
+slim.lm <- lm(Apps ~ Private + F.Undergrad + Outstate + Room.Board + Books + PhD + S.F.Ratio + perc.alumni + Expend + Grad.Rate, data = train)
+slim.lm %>% summary()  
+```
+After pruning the variables that were not significant in the full model, 
+all remaining variables' coefficients are significant in the pruned model.  
+Generally, this is not always the case, as highly correlated  variables that are 
+significant may not be significant anymore if you remove one.  
+
+```{r}
+plot(train$Apps, slim.lm %>% predict(train) , xlim = c(0, 11), 
+     main="Observed vs predicted values (training data)", xlab="observed", ylab="predicted",
+     # ylim=c(0, 11)
+     )
+abline(coef = c(0,1), col="red")
+
+plot(test$Apps, slim.lm %>% predict(test) , xlim = c(0, 11), 
+     main="Observed vs predicted values (test data)", xlab="observed", ylab="predicted",
+     # ylim=c(0, 11)
+     )
+abline(coef = c(0,1), col="red")
+```
+Visually, I don't see an obvious improvement of the slim model's performance to 
+the full model. 
+
+```{r}
+paste(
+  "RMSE of training set:",
+  get_rmse(train$Apps, slim.lm %>% predict(train)) %>% round(4),
+  " ---- RMSE of test set:",
+  get_rmse(test$Apps, slim.lm %>% predict(test)) %>% round(4)
+)
+
+```
+On the test set, the RMSE has gotten marginally worse, which is to be expected 
+when pruning predictors. On the other hand, also unsurprisingly, the RMSE on the test set has improved, though also by a bizmal amount.  
+
+```{r}
+anova(full.lm, slim.lm)
+
+```
+The p-value is >6%, so I would conservatively rule this slim model not to be 
+significantly different from the full model. 
+
+
+
+
+
+# 4. Stepwise variable selection
+
+```{r}
+step.fw.lm <- step(full.lm, direction = "forward")
+```
+```{r}
+step.bw.lm <- step(full.lm, direction = "backward")
+```
+
+```{r}
+data.frame(
+  model = c("Full", "Slim", "Step.Forward", "Step.Backward"),
+  rmse_train = c(
+    get_rmse(train$Apps, predict(full.lm, train)),
+    get_rmse(train$Apps, predict(slim.lm, train)),
+    get_rmse(train$Apps, predict(step.fw.lm, train)),
+    get_rmse(train$Apps, predict(step.bw.lm, train))
+  ),
+  rmse_test = c(
+    get_rmse(test$Apps, predict(full.lm, test)),
+    get_rmse(test$Apps, predict(slim.lm, test)),
+    get_rmse(test$Apps, predict(step.fw.lm, test)),
+    get_rmse(test$Apps, predict(step.bw.lm, test))
+  )
+) %>% kable()
+
+```
+
+```{r}
+plot(test$Apps, step.fw.lm %>% predict(test) , xlim = c(0, 11), 
+     main="Observed vs predicted values (forward stepwise model)", xlab="observed", ylab="predicted",
+     # ylim=c(0, 11)
+     )
+abline(coef = c(0,1), col="red")
+
+plot(test$Apps, step.bw.lm %>% predict(test) , xlim = c(0, 11), 
+     main="Observed vs predicted values (backward stepwise model)", xlab="observed", ylab="predicted",
+     # ylim=c(0, 11)
+     )
+abline(coef = c(0,1), col="red")
+```
+```{r}
+anova(full.lm, step.fw.lm)
+anova(full.lm, step.bw.lm)
+```
+
+From looking at the resulting RMSE scores, the observed vs predicted plots and 
+the results of the ANOVA tests, the stepwise models did not make a mentionable 
+difference. 
 

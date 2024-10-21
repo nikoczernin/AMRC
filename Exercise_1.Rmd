@@ -92,10 +92,7 @@ similar in the plots of the training and the test data.
 
 ```{r}
 get_rmse <- function(y, yhat){
-  N <- length(y)
-  y_minus_yhat <- (y - yhat)^2
-  avg_sum <- sum(y_minus_yhat)/N
-  sqrt(avg_sum)
+  sqrt(mean((y-yhat)^2))
 }
 
 paste(

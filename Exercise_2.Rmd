@@ -1,0 +1,211 @@
+---
+title: "Exercise 2"
+author: "Nikolaus Czernin"
+output: pdf_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+library("tidyverse")
+library("knitr")
+# install.packages("cvTools")
+library("cvTools")
+# install.packages("leaps", type = "binary")
+library("leaps")
+
+myseed <- 11721138
+set.seed(myseed)
+
+
+```
+
+```{r }
+load("building.RData")
+
+```
+
+```{r Data splitting}
+N <- nrow(df)
+train_ids <- sample(1:N, (N %/% 3) * 2)
+train <- df[train_ids, ]
+test <- df[-train_ids, ]
+
+```
+
+# 1: Full model
+
+```{r, fig.width=6, fig.height=6}
+rmse <- function(residuals, r=4){
+  residuals^2 %>% 
+    mean() %>% 
+    sqrt() %>% 
+    round(r)
+}
+
+lm.full <- lm(y ~ ., train)
+
+plot(predict(lm.full, train), train$y, 
+     main="Full linear model prediction performance\nRMSE =" %>% paste(rmse(lm.full$residuals)),
+     xlab="Predicted",
+     ylab="Observed"
+     )
+abline(coef = c(0,1), col="red")
+
+```
+
+The training error is very small here, close to 1 even. This indicates a
+fine fit, but we may be overfitting here I think.
+
+```{r Cross Validation}
+suppressWarnings(
+  cv_results <- cvFit(lm.full, data = df, y = df$y, 
+                      cost = rmspe, 
+                      K = 5, ,
+                      R = 100,
+                      seed=myseed)
+)
+cv_results %>%  print() 
+cv_results %>%   plot()
+
+```
+
+Using 100 rounds of 5-fold cross validation (CV) on the whole dataset,
+we get an average RMSE of \~5.3, which is a little higher than when
+using a single split like before.\
+When looking at the resulting boxplot of the CV, we see the meat of the
+results clustering near zero, which is a good thing and in line with our
+previous result. There are some statistical outliers, i.e. rounds where
+the error measure was really high. So many outliers may indicate that
+the model overfits on some splits. There may also be some observations
+that really leverage the model, wrecking its performance when being used
+in training or testing.
+
+```{r CV with Trimmed RMSE}
+suppressWarnings(
+  cv_results.t <- cvFit(lm.full, data = df, y = df$y, 
+                      cost = rtmspe, 
+                      K = 5, ,
+                      R = 100,
+                      seed=myseed)
+)
+cv_results.t %>%  print() 
+cv_results.t %>%   plot()
+
+```
+
+When using the RTMSPE, the Root Trimmed Mean Squared Error, we prune the
+outliers in terms of errors to get a less pessimistic view on the
+results. The resulting mean loss is now \~0.1507, a vast improvement.
+The plot also looks more promising and legible. Only two outliers
+remain, and well below 1 too.
+
+```{r Testing the model, fig.height=6, fig.width=6}
+yhat <- predict(lm.full, test) 
+plot(yhat, test$y, xlab="predicted", ylab="observed", 
+      main="Full linear model prediction performance\nRMSE =" %>% paste(rmse(yhat - test$y))
+     )
+abline(coef = c(0,1), col="red")
+
+```
+
+The RMSE is a little higher in the testing than in training altogether,
+so there may have been overfitting after all. There is a likely
+leveraging point in the test data, which the model highly
+underestimated. Perhaps this point alone influenced the model
+performance enough to get it such poor results compared to training.
+
+# 2. Best subset regression
+
+```{r}
+summary(lm.full)
+
+```
+
+I chose to preselect only the variables whose coefficients were marked
+as significantly unequal to 0 in the lm() function, which were the
+following 11:\
+- PhysFin1\
+- PhysFin5\
+- PhysFin6\
+- PhysFin8\
+- Econ11\
+- Econ16\
+- Econ13.lag1\
+- Econ14.lag1\
+- Econ19.lag1\
+- Econ4.lag2\
+- Econ5.lag2
+
+```{r}
+
+results_subsets <- regsubsets(y~ PhysFin1 + PhysFin5 + PhysFin6 + PhysFin8 + Econ11 + Econ16 + 
+             Econ13.lag1 + Econ14.lag1 + Econ19.lag1 + Econ4.lag2 + Econ5.lag2
+           , data=train)
+
+results_subsets %>% summary()
+results_subsets %>% plot()
+
+```
+
+Judging from the resulting plot, the model performance saturates at a
+BIC of \~520 or 540, in which case it would require either 6 or 8
+variables (including the intercept which is no variable of course). 
+Let's go with the latter.  
+- intercept
+- PhysFin1\
+- PhysFin5\
+- PhysFin6\
+- PhysFin8\
+- Econ16\
+- Econ14.lag1\
+
+Now on to use these variables again in another shot at the `lm()`
+function: 
+
+```{r Creating the slimmer linear model }
+lm.slim <- lm(y ~PhysFin1 + PhysFin5 + PhysFin6 + PhysFin8 + Econ16 + Econ14.lag1, 
+              data=train)
+lm.slim %>% summary()
+# lm.slim %>% plot()
+```
+
+```{r comparing it via CV}
+suppressWarnings(
+  cv_results.slim <- cvFit(lm.slim, data = df, y = df$y, 
+                      cost = rmspe, 
+                      K = 5, ,
+                      R = 100,
+                      seed=myseed)
+)
+cv_results.slim %>%  print() 
+cv_results.slim %>%   plot()
+```
+The resulting RMSE and boxplot look a lot more like the time we used the trimmed RMSE 
+instead of keeping all rounds. This indicates that pruning the non-significant 
+variables alone improved the general performance of a linear model with the given 
+data on average by a good amount. This way we could hopefully deal with some of the 
+overfitting we were running into earlier. 
+
+
+
+```{r Mkaing predictions with the slimmer model, fig.height=6, fig.width=6}
+
+yhat <- predict(lm.slim, test) 
+plot(yhat, test$y, xlab="predicted", ylab="observed", 
+      main="Pruned linear model prediction performance\nRMSE =" %>% paste(rmse(yhat - test$y))
+     )
+abline(coef = c(0,1), col="red")
+
+
+```
+Not only is the RMSE of this test lower than in the previous model, the plot 
+also shows how the pruning of variables allowed the model to avoid the crass 
+underestimation it made in the previous test. 
+
+```{r}
+anova(lm.full, lm.slim)
+```
+
+The anova test shows that the the smaller model makes a significant improvement. s

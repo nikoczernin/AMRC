@@ -1,0 +1,17 @@
+---
+title: "Exercise 3"
+author: "Nikolaus Czernin"
+output: pdf_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+# install.packages("ISLR")
+library("ISLR")
+library("tidyverse")
+library("knitr")
+
+
+```

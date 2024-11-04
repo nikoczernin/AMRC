@@ -2,6 +2,8 @@
 title: "Exercise 3"
 author: "Nikolaus Czernin"
 output: pdf_document
+fig_width: 6 
+fig_height: 6
 editor_options: 
   markdown: 
     wrap: 72
@@ -12,6 +14,56 @@ editor_options:
 library("ISLR")
 library("tidyverse")
 library("knitr")
-
+# install.packages("pls")
+library("pls")
 
 ```
+
+
+```{r}
+load("building.RData")
+# df %>% head()
+N <- nrow(df)
+train_ids <- sample(1:N, (N %/% 3) * 2)
+train <- df[train_ids, ]
+test <- df[-train_ids, ]
+dim(df)
+```
+
+# 1: PCA
+```{r}
+# ?pcr
+
+model.pcr <- pcr(y ~ ., data=train, scale=T ,
+                 validation="CV", segments=10)
+# summary(model.pcr)
+validationplot(model.pcr, val.type = "RMSE", main = "RMSEP for each number of components", log = "y")
+validationplot(model.pcr, val.type = "RMSE", main = "RMSEP for each number of components", log = "y", xlim=c(0, 60))
+
+```
+From lookin at the validation plot, I feel like anything between 20 and 65 components 
+is probably fine, but since we are trying to minimize the number of variables, 
+I am going to go with ~20 components. 
+
+
+```{r, fig.width=6 , fig.height=6}
+rmse <- function(y, yhat, r=4){
+  sqrt(mean((y-yhat)^2)) %>% round(4)
+}
+
+
+predplot(model.pcr, ncomp = 20, main="PCR, 10-fold CV on training data, 20 components\n RMSE:" %>% paste(rmse(train$y, predict(model.pcr, train, ncomp=20))))
+
+abline(coef = c(0,1), col="red")
+
+```
+
+
+```{r, fig.width=6 , fig.height=6}
+
+plot(test$y, predict(model.pcr, test, ncomp=20), main="PCR, 10-fold CV on test data, 20 components\n RMSE:" %>% paste(rmse(test$y, predict(model.pcr, test, ncomp=20))))
+
+abline(coef = c(0,1), col="red")
+
+```
+

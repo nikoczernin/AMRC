@@ -67,3 +67,73 @@ abline(coef = c(0,1), col="red")
 
 ```
 
+
+# 2: PLS
+
+```{r}
+model.pls <- plsr(y ~ .,  data=train, scale=T ,
+                 validation="CV", segments=10)
+# summary(model.pls)
+validationplot(model.pls, val.type = "RMSE", main = "RMSEP for each number of components", log = "y")
+validationplot(model.pls, val.type = "RMSE", main = "RMSEP for each number of components", log = "y", xlim=c(0, 60))
+
+```
+Again, the validation plot is more easily leggible when limiting the axis view. 
+Visually, it seems that a very low number of components, even as low as 7 ort 8 
+may be optimal. 
+
+```{r, fig.width=6 , fig.height=6}
+
+predplot(model.pls, ncomp = 8, main="PLS, 10-fold CV on training data, 8 components\n RMSE:" %>% paste(rmse(train$y, predict(model.pls, train, ncomp=8))))
+
+abline(coef = c(0,1), col="red")
+
+```
+The fit of the PLS prediction plot looks a little better than that of the PCR model. 
+
+```{r, fig.width=6 , fig.height=6}
+plot(test$y, predict(model.pls, test, ncomp=8), main="PLS, 10-fold CV on test data, 8 components\n RMSE:" %>% paste(rmse(test$y, predict(model.pls, test, ncomp=8))))
+
+abline(coef = c(0,1), col="red")
+```
+I do not see an obvious improvement of the test prediction from changing model from PCR to PLS. 
+
+```{r, fig.width=6 , fig.height=6}
+plot(
+  model.pcr %>% coef(ncomp = 20),
+  model.pls %>% coef(ncomp = 8),
+  main="Comparing the PCR and PLS models' coefficients",
+  xlab="PCR (20 components)", ylab="PLS (8 components)"
+  )
+abline(coef = c(0,1), col="red")
+
+```
+I plotted a scatterplot with the PCR coefficients on the x-axis and the PLS 
+coefficients on the y-axis. The red line is where the model agree. 
+Since most points are pretty close to the red line, I assume that the models 
+did not yield results too differently. Notably, there are coefficient way higher (absolute value) 
+than the others, which PLS estimate a little higher than PCR. Otherwise, I see a general agreement.
+
+
+
+# Scores
+
+```{r, fig.width=11 , fig.height=6}
+par(mfrow = c(1, 2))  # Arrange plots in a 2x2 grid
+plot(model.pcr$scores[,1:2], main="The first two score vectors Z of the PCR model")
+plot(model.pls$scores[,1:2], main="The first two score vectors T of the PLS model")
+
+```
+
+
+# Loadings
+
+```{r, fig.width=11 , fig.height=6}
+par(mfrow = c(1, 2))  # Arrange plots in a 2x2 grid
+plot(model.pcr$loadings[,1:2], main="The first two loadings vectors V of the PCR model")
+plot(model.pls$loadings[,1:2], main="The first two loadings vectors W of the PLS model")
+
+```
+
+
+

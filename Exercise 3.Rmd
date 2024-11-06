@@ -124,6 +124,9 @@ plot(model.pcr$scores[,1:2], main="The first two score vectors Z of the PCR mode
 plot(model.pls$scores[,1:2], main="The first two score vectors T of the PLS model")
 
 ```
+The scores are the actual values of the transformation vector to multiply 
+the variable values of the observed matrix with. 
+When plotting the scores of PCR for 1 component and 2 components against each other, they drawn points almost appear to create an oscillating curve function. 
 
 
 # Loadings
@@ -134,6 +137,8 @@ plot(model.pcr$loadings[,1:2], main="The first two loadings vectors V of the PCR
 plot(model.pls$loadings[,1:2], main="The first two loadings vectors W of the PLS model")
 
 ```
-
+The loadings outline the contribution to explaining a true models variance of the components in question. 
+The loadings of the PCR and PLS model for a single component kind of cluster around 
+-0.1 and 0.1 respectively. 
 
 

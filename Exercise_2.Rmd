@@ -2,6 +2,8 @@
 title: "Exercise 2"
 author: "Nikolaus Czernin"
 output: pdf_document
+fig_width: 6 
+fig_height: 6
 editor_options: 
   markdown: 
     wrap: 72

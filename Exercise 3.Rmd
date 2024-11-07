@@ -19,7 +19,6 @@ library("pls")
 
 ```
 
-
 ```{r}
 load("building.RData")
 # df %>% head()
@@ -31,6 +30,7 @@ dim(df)
 ```
 
 # 1: PCA
+
 ```{r}
 # ?pcr
 
@@ -41,10 +41,10 @@ validationplot(model.pcr, val.type = "RMSE", main = "RMSEP for each number of co
 validationplot(model.pcr, val.type = "RMSE", main = "RMSEP for each number of components", log = "y", xlim=c(0, 60))
 
 ```
-From lookin at the validation plot, I feel like anything between 20 and 65 components 
-is probably fine, but since we are trying to minimize the number of variables, 
-I am going to go with ~20 components. 
 
+From lookin at the validation plot, I feel like anything between 20 and
+65 components is probably fine, but since we are trying to minimize the
+number of variables, I am going to go with \~20 components.
 
 ```{r, fig.width=6 , fig.height=6}
 rmse <- function(y, yhat, r=4){
@@ -58,7 +58,6 @@ abline(coef = c(0,1), col="red")
 
 ```
 
-
 ```{r, fig.width=6 , fig.height=6}
 
 plot(test$y, predict(model.pcr, test, ncomp=20), main="PCR, 10-fold CV on test data, 20 components\n RMSE:" %>% paste(rmse(test$y, predict(model.pcr, test, ncomp=20))))
@@ -66,7 +65,6 @@ plot(test$y, predict(model.pcr, test, ncomp=20), main="PCR, 10-fold CV on test d
 abline(coef = c(0,1), col="red")
 
 ```
-
 
 # 2: PLS
 
@@ -78,9 +76,13 @@ validationplot(model.pls, val.type = "RMSE", main = "RMSEP for each number of co
 validationplot(model.pls, val.type = "RMSE", main = "RMSEP for each number of components", log = "y", xlim=c(0, 60))
 
 ```
-Again, the validation plot is more easily leggible when limiting the axis view. 
-Visually, it seems that a very low number of components, even as low as 7 ort 8 
-may be optimal. 
+
+Again, the validation plot is more easily leggible when limiting the
+axis view. Visually, it seems that a very low number of components, even
+as low as 7 ort 8 may be optimal.
+
+This big reduction might be due to the fact that PLS takes into account
+the response and PCR does not.
 
 ```{r, fig.width=6 , fig.height=6}
 
@@ -89,14 +91,18 @@ predplot(model.pls, ncomp = 8, main="PLS, 10-fold CV on training data, 8 compone
 abline(coef = c(0,1), col="red")
 
 ```
-The fit of the PLS prediction plot looks a little better than that of the PCR model. 
+
+The fit of the PLS prediction plot looks a little better than that of
+the PCR model.
 
 ```{r, fig.width=6 , fig.height=6}
 plot(test$y, predict(model.pls, test, ncomp=8), main="PLS, 10-fold CV on test data, 8 components\n RMSE:" %>% paste(rmse(test$y, predict(model.pls, test, ncomp=8))))
 
 abline(coef = c(0,1), col="red")
 ```
-I do not see an obvious improvement of the test prediction from changing model from PCR to PLS. 
+
+I do not see an obvious improvement of the test prediction from changing
+model from PCR to PLS.
 
 ```{r, fig.width=6 , fig.height=6}
 plot(
@@ -108,13 +114,13 @@ plot(
 abline(coef = c(0,1), col="red")
 
 ```
-I plotted a scatterplot with the PCR coefficients on the x-axis and the PLS 
-coefficients on the y-axis. The red line is where the model agree. 
-Since most points are pretty close to the red line, I assume that the models 
-did not yield results too differently. Notably, there are coefficient way higher (absolute value) 
-than the others, which PLS estimate a little higher than PCR. Otherwise, I see a general agreement.
 
-
+I plotted a scatterplot with the PCR coefficients on the x-axis and the
+PLS coefficients on the y-axis. The red line is where the model agree.
+Since most points are pretty close to the red line, I assume that the
+models did not yield results too differently. Notably, there are
+coefficient way higher (absolute value) than the others, which PLS
+estimate a little higher than PCR. Otherwise, I see a general agreement.
 
 # Scores
 
@@ -124,10 +130,11 @@ plot(model.pcr$scores[,1:2], main="The first two score vectors Z of the PCR mode
 plot(model.pls$scores[,1:2], main="The first two score vectors T of the PLS model")
 
 ```
-The scores are the actual values of the transformation vector to multiply 
-the variable values of the observed matrix with. 
-When plotting the scores of PCR for 1 component and 2 components against each other, they drawn points almost appear to create an oscillating curve function. 
 
+The scores are the actual values of the transformation vector to
+multiply the variable values of the observed matrix with. When plotting
+the scores of PCR for 1 component and 2 components against each other,
+they drawn points almost appear to create an oscillating curve function.
 
 # Loadings
 
@@ -137,8 +144,8 @@ plot(model.pcr$loadings[,1:2], main="The first two loadings vectors V of the PCR
 plot(model.pls$loadings[,1:2], main="The first two loadings vectors W of the PLS model")
 
 ```
-The loadings outline the contribution to explaining a true models variance of the components in question. 
-The loadings of the PCR and PLS model for a single component kind of cluster around 
--0.1 and 0.1 respectively. 
 
-
+The loadings outline the contribution to explaining a true models
+variance of the components in question. The loadings of the PCR and PLS
+model for a single component kind of cluster around -0.1 and 0.1
+respectively.

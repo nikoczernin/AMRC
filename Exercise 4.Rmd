@@ -19,6 +19,7 @@ library("glmnet")
 
 ```{r}
 set.seed(11721138)
+
 load("building.RData")
 # df %>% head()
 N <- nrow(df)
@@ -28,41 +29,67 @@ test <- df[-train_ids, ]
 dim(df)
 ```
 
-
 # Ridge Regression
+
 ```{r}
 ridge <- glmnet(train %>% select(-y), train$y, alpha=0)
 ridge %>% plot(xvar="lambda")
 ```
-The plot shows how much the regularization parameter Lambda keeps the size of the coefficients of the model in check. The larger Lambda gets, the more the coefficients approach 0. It does not shrink any of them all the way down to zero, as can be seen by the number on the upper x axis, indicating the used number of variables.  
-The x-axis shows the log of the lambda values,
-i.e. exponentially rising numbers to allow trying for different magnitudes of lambda. 
-The lambda values of the x-ticks are for example = {`r seq(-2, 6, 2) %>% exp() %>% round(3)`}.
-I presume that the package generates the lamdba value range from top to bottom, getting the lambda value at which all coefficients are almost 0 and a set number of value below. According to the documentation of the package, it generates 100 different lambda values by default.  
 
-`alpha` is the parameter that defines whether we are doing Ridge or Lasso regression, where 0 is Ridge and 1 is Lasso. It is not binary though, but a floating point number $\in[0, 1]$. It defines the nature of the penalty applied to coefficient size. The penalty's formula is $(1-\alpha)/2||\beta||^2_2+\alpha||\beta||_1$.
+The plot shows how much the regularization parameter Lambda keeps the
+size of the coefficients of the model in check. The larger Lambda gets,
+the more the coefficients approach 0. It does not shrink any of them all
+the way down to zero, as can be seen by the number on the upper x axis,
+indicating the used number of variables.\
+The x-axis shows the log of the lambda values, i.e. exponentially rising
+numbers to allow trying for different magnitudes of lambda. The lambda
+values of the x-ticks are for example =
+{`r seq(-2, 6, 2) %>% exp() %>% round(3)`}. I presume that the package
+generates the lamdba value range from top to bottom, getting the lambda
+value at which all coefficients are almost 0 and a set number of value
+below. According to the documentation of the package, it generates 100
+different lambda values by default.
+
+`alpha` is the parameter that defines whether we are doing Ridge or
+Lasso regression, where 0 is Ridge and 1 is Lasso. It is not binary
+though, but a floating point number $\in[0, 1]$. It defines the nature
+of the penalty applied to coefficient size. The penalty's formula is
+$(1-\alpha)/2||\beta||^2_2+\alpha||\beta||_1$.
 
 ## Cross Validation
+
 ```{r}
 ridge.cv <- cv.glmnet(train %>% select(-y) %>% as.matrix(), train$y, alpha=0, nfolds=10)
 ridge.cv %>% plot()
 
 ```
-The plot above shows the MSE results (red dots) of the 10-fold cross validation on different lambda values and also the standard errors (vertical intervals surrounding).  
-There are two dashed lines, where the leftmost one marks the lambda value with the globally minimal MSE, which is `r ridge.cv$lambda.min %>% round(3)`, and the one on the right is the largest lambda value where the MSE is not significantly worse than the next-smaller lambda's MSE. 
-This way of selecting an optimal lambda values is called the one-standard error rule. The lambda value here is `r ridge.cv$lambda.1se %>% round(3)`   
 
-All in all, we still always stick with 107 coefficients, as none of them are reduced all the way down to 0. 
+The plot above shows the MSE results (red dots) of the 10-fold cross
+validation on different lambda values and also the standard errors
+(vertical intervals surrounding).\
+There are two dashed lines, where the leftmost one marks the lambda
+value with the globally minimal MSE, which is
+`r ridge.cv$lambda.min %>% round(3)`, and the one on the right is the
+largest lambda value where the MSE is not significantly worse than the
+next-smaller lambda's MSE. This way of selecting an optimal lambda
+values is called the one-standard error rule. The lambda value here is
+`r ridge.cv$lambda.1se %>% round(3)`
 
-We can get the coefficients and the lambda value at the right dashed line now:
+All in all, we still always stick with 107 coefficients, as none of them
+are reduced all the way down to 0.
+
+We can get the coefficients and the lambda value at the right dashed
+line now:
+
 ```{r}
 # get the coefficients using the 1-standard error rule
 coef(ridge.cv,s="lambda.1se")
 ```
-The coefficients are all very small, but never zero. 
 
+The coefficients are all very small, but never zero.
 
 ## Testing the model
+
 ```{r, fig.width=6, fig.height=6}
 rmse <- function(y, yhat, r=4){
   sqrt(mean((y-yhat)^2)) %>% round(4)
@@ -78,36 +105,51 @@ plot(test$y, ridge.yhat, main=paste("Ridge, 10-fold CV on test data, lambda=",  
 
 abline(coef = c(0,1), col="red")
 ```
+
 ```{r}
 data.frame(
   model = c("Full linear model",  "Significant coefficients only",  "PCR",  "PLS",  "Ridge"),
   RMSE = c(0.540,0.265,0.287,0.284,ridge.rmse %>% round(3))
 ) %>% kable()
 ```
-So far, Ridge regression can outperform the cross validation model where we picked only the coefficients that were singificant in the full linear model, and even PCR and PLS. 
+
+So far, Ridge regression can outperform the cross validation model where
+we picked only the coefficients that were singificant in the full linear
+model, and even PCR and PLS.
 
 # Lasso Regression
+
 ```{r}
 lasso <- glmnet(train %>% select(-y), train$y, alpha=1)
 lasso %>% plot(xvar="lambda")
 ```
-In Lasso regression, where the parameter alpha is 1, even at similar lambda values a lot of the coefficients are set to 0, effectively causing the model to do variable selection. Even at a lambda value as low as`r exp(-8) %>% round(6)` we only end up with 56 non-zero coefficients, as oppose to 107 like in Ridge regression.  
 
+In Lasso regression, where the parameter alpha is 1, even at similar
+lambda values a lot of the coefficients are set to 0, effectively
+causing the model to do variable selection. Even at a lambda value as
+low as`r exp(-8) %>% round(6)` we only end up with 56 non-zero
+coefficients, as oppose to 107 like in Ridge regression.
 
 ## Cross Validation
+
 ```{r}
 lasso.cv <- cv.glmnet(train %>% select(-y) %>% as.matrix(), train$y, alpha=1, nfolds=10)
 lasso.cv %>% plot()
 
 ```
-In Lasso regression we can pick way higher lambda values than before. Whereas before the 1-standard error rule made up pick lambda=`r ridge.cv$lambda.min %>% round(3)`, now we get an optimal value of lambda=`r lasso.cv$lambda.1se %>% round(3)`, here there are `r coef(lasso.cv,s="lambda.1se") %>% .[abs(.)>0] %>% length()` variables unequal to zero (incl an intercept). The minimal MSE lambda value is now `r ridge.cv$lambda.min %>% round(3)`.
 
+In Lasso regression we can pick way higher lambda values than before.
+Whereas before the 1-standard error rule made up pick
+lambda=`r ridge.cv$lambda.min %>% round(3)`, now we get an optimal value
+of lambda=`r lasso.cv$lambda.1se %>% round(3)`, here there are
+`r coef(lasso.cv,s="lambda.1se") %>% .[abs(.)>0] %>% length()` variables
+unequal to zero (incl an intercept). The minimal MSE lambda value is now
+`r ridge.cv$lambda.min %>% round(3)`.
 
 ```{r}
 # get the coefficients using the 1-standard error rule
 coef(lasso.cv,s="lambda.1se")
 ```
-
 
 ```{r, fig.width=6, fig.height=6}
 lasso.yhat <- predict(lasso.cv, newx=test %>% select(-y) %>% as.matrix(),s="lambda.1se")
@@ -118,16 +160,19 @@ plot(test$y, lasso.yhat, main=paste("Lasso, 10-fold CV on test data, lambda=",  
 
 abline(coef = c(0,1), col="red")
 ```
+
 ```{r}
 data.frame(
   model = c("Full linear model",  "Significant coefficients only",  "PCR",  "PLS",  "Ridge", "Lasso"),
   RMSE = c(0.540,0.265,0.287,0.284,ridge.rmse %>% round(3), lasso.rmse %>% round(3))
 ) %>% kable()
 ```
-Lasso regression performed even a little better on the test dataset than Ridge Regression. 
 
+Lasso regression performed even a little better on the test dataset than
+Ridge Regression.
 
 # Adaptive Lasso
+
 ```{r}
 ridge.coeffs <- coef(ridge.cv,s="lambda.1se")
 alasso <- glmnet(train %>% select(-y) %>% as.matrix(), train$y, 
@@ -135,21 +180,30 @@ alasso <- glmnet(train %>% select(-y) %>% as.matrix(), train$y,
 plot(alasso, xvar="lambda")
 
 ```
-When using the ridge coefficients as penalty, the resulting model also does variable selection, reducing many of the coefficients down to zero. This model is designed to assign importance weights to strong predictors, in order not to exclude them in Lasso regression, which could prune strong predictors. 
+
+When using the ridge coefficients as penalty, the resulting model also
+does variable selection, reducing many of the coefficients down to zero.
+This model is designed to assign importance weights to strong
+predictors, in order not to exclude them in Lasso regression, which
+could prune strong predictors.
 
 ```{r}
 alasso.cv <- cv.glmnet(train %>% select(-y) %>% as.matrix(), train$y, penalty.factor = 1 / abs(ridge.coeffs[-1]), nfolds=10)
 alasso.cv %>% plot()
 ```
 
-With adaptive lasso, the new minimum MSE lambda value is `r alasso.cv$lambda.min` and the optimal lambda value is `r alasso.cv$lambda.1se`, both of which are way higher lambda values than in the previous 2 models. In the optimal case, we select `r coef(alasso.cv,s="lambda.1se") %>% .[abs(.)>0] %>% length()`, more than before.  
-
-
+With adaptive lasso, the new minimum MSE lambda value is
+`r alasso.cv$lambda.min` and the optimal lambda value is
+`r alasso.cv$lambda.1se`, both of which are way higher lambda values
+than in the previous 2 models. In the optimal case, we select
+`r coef(alasso.cv,s="lambda.1se") %>% .[abs(.)>0] %>% length()`, more
+than before.
 
 ```{r}
 # get the coefficients using the 1-standard error rule
 coef(alasso.cv,s="lambda.1se")
 ```
+
 ```{r, fig.width=6, fig.height=6}
 alasso.yhat <- predict(alasso.cv, newx=test %>% select(-y) %>% as.matrix(),s="lambda.1se")
 alasso.rmse <- rmse(test$y, alasso.yhat)
@@ -166,16 +220,22 @@ data.frame(
   RMSE = c(0.540,0.265,0.287,0.284,ridge.rmse %>% round(3), lasso.rmse %>% round(3), alasso.rmse %>% round(3))
 ) %>% kable()
 ```
-Adaptive Lasso in my case could not quite outperform Lasso or Ridge. 
 
-## Comparing the coefficients of Lasso and adaptive Lasso 
+Adaptive Lasso in my case could not quite outperform Lasso or Ridge.
+
+## Comparing the coefficients of Lasso and adaptive Lasso
+
 ```{r}
 data.frame(
   Lasso = coef(lasso.cv,s="lambda.1se")[,1],
   Adaptive.Lasso = coef(alasso.cv,s="lambda.1se")[,1] 
 ) %>% 
   mutate_all(function(x)ifelse(x==0, NA, x))
+
+plot(coef(lasso.cv,s="lambda.1se")[,1], coef(alasso.cv,s="lambda.1se")[,1] )
 ```
-While adaptive Lasso regression is known not to be generally a better performer than Ridge and Lasso, it has "Oracle" properties, in that it is somehow able to very well find out what variables are good predictors of the data. 
 
-
+While adaptive Lasso regression is known not to be generally a better
+performer than Ridge and Lasso, it has "Oracle" properties, in that it
+is somehow able to very well find out what variables are good predictors
+of the data.

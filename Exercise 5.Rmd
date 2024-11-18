@@ -1,0 +1,187 @@
+---
+title: "Exercise 4"
+author: "Nikolaus Czernin"
+output: pdf_document
+fig_width: 6 
+fig_height: 6
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+library("tidyverse")
+# install.packages("ROCit")
+library("ROCit")
+
+```
+
+```{r}
+set.seed(11721138)
+```
+
+
+```{r}
+# Preprocessing
+load("Loan.Rdata")
+```
+
+
+```{r Colinearity}
+summary(Loan)
+suppressWarnings(
+  Loan %>% 
+    .[sapply(., is.numeric)] %>% 
+    cor(use = "complete.obs") %>% 
+    round(3)
+)
+```
+The summary shows that the column Term is constant, we therefore can drop it. 
+
+The correlation-table shows that some of the numeric columns are highly correlated. 
+I opt to deselect them fully, to avoid having a rank-deficcient model later. 
+
+```{r Prweprocessing}
+Loan <- Loan %>%
+  # Scale only numeric columns
+  mutate(across(where(is.numeric), ~ if (sd(.) > 0) scale(.) else .)) %>%
+  # remove the constant variable Term
+  select(-Term) %>% 
+  # remove the variables with colearity
+  select(-Score) %>% 
+  # 1-hot encode the response levels
+  mutate(Status = ifelse(Status == "CO", 1, 0))
+
+```
+
+
+```{r Splitting}
+N <- nrow(Loan)
+train_ids <- sample(1:N, (N %/% 3) * 2)
+
+train <- Loan[train_ids, ] 
+
+test <- Loan[-train_ids, ] 
+
+summary(Loan)
+
+```
+
+We need the response variable to be a numerical variable, so I transform it into 
+2 1-hot encodings. If we were to use only 1 such variable, which would be enough, 
+1 could signify a loan being charged-off, which is typically the 
+thing you would want to predict for credit risk estimation.  
+
+I mean-scaled all numeric variables, because their distributions were not all similar. 
+
+
+
+# Least Squares Classification
+
+```{r}
+lm.full <- lm(Status~., data=train)
+lm.full
+summary(lm.full)
+
+```
+Because we included both response variable encodings, we get 2 symmetrical 
+sets of coefficients for estimating either level of the response Status. 
+2 of the coefficients are significant, Score is even NA. 
+
+```{r}
+plot(lm.full)
+```
+The residuals vs fitted plot shows two line patterns, only 1 of which is close to 
+the red line. In a linear regression context, this would be alarming, but since 
+we have 2 distint and mutually binary exclusive binary numbers to predict here, 
+this is fine. Each line pattern corresponds with 1 single level of response.  
+The other 3 plots also show 2 distinct groups of observations. 
+
+## Making predictions
+
+```{r}
+cutoff <- 0.2
+yhat <- predict(lm.full, newdata=train)
+plot(train$Status, yhat, col=ifelse(yhat>cutoff, "red", "blue"))
+abline(h=cutoff, col="orange")
+```
+It looks like something is going wrong here. The model estimates all all repsonse 
+values to be under 0.4, with complete overlap between the values that are in reality 
+0 or 1. Visually, there is no clear pick for a position of a cutoff line to separate 
+the two response classes.  
+For the sake of picking one, I went with 0.2.
+
+```{r}
+cm <- table(train$Status, yhat>cutoff) %>% print()
+acc <- sum(diag(cm)) / sum(cm)
+print(paste("Accuracy:", acc))
+recall <- cm[2,2] / sum(cm[2,])
+print(paste("Recall:", recall %>% round(4)))
+
+```
+The bottom row shows the values of the training data that are actually 1, i.e. 
+real payback failures. The sum of the bottom row is much lower than the top row, 
+i.e. the data labels are not balanced. Still, our model was not able to reflect 
+this imbalance in its predictions. The column sums are roughly similar, ~300, 
+meaning it was generally on the fence about the class of each observations, 
+at the selected cutoff at least. 
+
+```{r}
+roc <- rocit(score=yhat, class=train$Status)
+roc %>% summary()
+roc %>% plot()
+
+```
+Our current AUC is 0.6669, not too close to 0.5, which would be proper bad, 
+but there is certainly room for improvement.  
+The algorithm shows in the plot that the optimal cutoff point would be at 0.3, 
+rather than 0.2 like I thought earlier. 
+
+
+```{r}
+roc2 <- measureit(yhat, train$Status, measure=c("TPR","TNR"))
+roc2.BACC = (roc2$TP + roc2$TN) / 2
+
+
+optimal_bacc <- which.max(roc2.BACC) 
+optimal_cutoff <- optimal_bacc %>% roc2$Cutoff[.]
+
+plot(roc2$Cutoff, roc2.BACC, type = "l", xlab = "Cutoff", ylab = "Balanced Accuracy",
+main = "Balanced Accuracy vs Cutoff")
+abline(v=0.28, col="blue")
+abline(v=optimal_cutoff, col="red")
+
+```
+Now, interestingly, he maximum value of the balanced accuracy is at ~0.386 (red line), 
+even higher than in the plot above.
+Just judging visually, the elbow point of the cutoff against the Balanced Accuracy seems to 
+be ~0.28 (blue line).  
+
+
+## Working with the new cutoff values
+```{r}
+cm <- table(train$Status, yhat>optimal_cutoff) %>% print()
+acc <- sum(diag(cm)) / sum(cm)
+print(paste("Accuracy:", acc %>% round(4)))
+recall <- cm[2,2] / sum(cm[2,])
+print(paste("Recall:", recall %>% round(4)))
+```
+Well, now the accuracy is way higher than before and the model really does 
+reflect the dataset's class imbalance. I would argue that the model is now not 
+much better, as it barely ever classifies an observation to be an actual payback 
+failure, which is exactly the type of case you would not want to miss in a 
+real world scenario. This is observable in the recall, which is super low and 
+was higher with the cutoff at 0.2. 
+
+
+
+```{r}
+custom_cutoff <- 0.28
+cm <- table(train$Status, yhat>custom_cutoff) %>% print()
+acc <- sum(diag(cm)) / sum(cm)
+print(paste("Accuracy:", acc %>% round(4)))
+recall <- cm[2,2] / sum(cm[2,])
+print(paste("Recall:", recall %>% round(4)))
+```
+My updated custom pick for a cutoff, 0.28, does a little better, with a slightly 
+improved Recall, but still probably problematic in a real world application. 

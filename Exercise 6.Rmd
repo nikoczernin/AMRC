@@ -1,0 +1,278 @@
+---
+title: "Exercise 6"
+author: "Nikolaus Czernin"
+output: pdf_document
+fig_width: 6 
+fig_height: 6
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+library("MASS")
+library("tidyverse")
+# install.packages("ROCit")
+library("ROCit")
+library("knitr")
+
+# install.packages("klaR")
+library("klaR")
+
+set.seed(11721138)
+```
+
+```{r}
+# loading data
+load("Loan.Rdata")
+```
+
+```{r}
+Loan %>% head()
+```
+```{r Preprocessing}
+Loan <- Loan %>%
+  # Scale only numeric columns
+  mutate(across(where(is.numeric), ~ if (sd(.) > 0) scale(.) else .)) %>%
+  # remove the constant variable Term
+  dplyr::select(-Term) %>% 
+  # remove the variables with colearity
+  dplyr::select(-Score) %>% 
+  # 1-hot encode the response levels
+  mutate(Status = ifelse(Status == "CO", 1, 0))
+
+```
+LDA assumes that variable are normally distributed and therfore, scaling should not 
+be required. To be safe, I scaled all numeric variables anyway. 
+I removed Term because it is constant. 
+I also removed Score because is is highly correlated with other variables. 
+
+
+
+```{r Splitting}
+N <- nrow(Loan)
+train_ids <- sample(1:N, (N %/% 3) * 2)
+
+train <- Loan[train_ids, ] 
+
+test <- Loan[-train_ids, ] 
+
+summary(Loan)
+
+```
+
+```{r Evaluation measure}
+eval_ <- function(y, yhat){
+  conf.mat <- table(y, yhat)
+  TP <- conf.mat[2, 2] 
+  FP <- conf.mat[1, 2] 
+  FN <- conf.mat[2, 1] 
+  TN <- conf.mat[1, 1] 
+  return (list(TP=TP, FP=FP, FN=FN, TN=TN))
+}
+
+# misclassification rate: (FP+FN)/(FP+TN+FN+TP)
+MR <- function(y, yhat){
+  n <- length(y)
+  metrics <- eval_(y, yhat)
+  (metrics$FP + metrics$FN) / n
+}
+
+# balanced accuracy: (TPR+TNR)/2
+BACC <- function(y, yhat){
+  metrics <- eval_(y, yhat)
+  TPR <-  metrics$TP / (metrics$TP + metrics$FN) 
+  TNR <-  metrics$TN / (metrics$TN + metrics$FP) 
+  (TPR + TNR) / 2
+}
+
+
+```
+
+
+# LDA
+```{r}
+model.lda <- lda(Status~., data=train)
+plot(model.lda)
+```
+
+```{r }
+prediction <- predict(model.lda, train)$class
+observed <- train$Status
+MR(observed, prediction) %>% round(4) %>% paste("Misclassification rate:", .)
+BACC(observed, prediction) %>% round(4) %>% paste("Balanced accuracy", .)
+
+table(observed, prediction)
+
+```
+
+
+# LDA with undersampled balancing
+```{r}
+# get the number of the smaller group of classes
+n.min <- min(train %>% filter(Status==1) %>% nrow(), train %>% filter(Status==0) %>% nrow())
+# now sample both groups in the training data and create the undersampled training dataset
+train.us <- rbind(
+  train %>% filter(Status==0) %>% sample_n(n.min),
+  train %>% filter(Status==1) %>% sample_n(n.min)
+)
+
+```
+
+```{r}
+model.lda.us <- lda(Status~., data=train.us)
+plot(model.lda.us)
+```
+
+```{r}
+prediction.us <- predict(model.lda.us, train)$class
+observed.us <- train$Status
+MR(observed.us, prediction.us) %>% round(4) %>% paste("Misclassification rate (undersampled):", .)
+BACC(observed.us, prediction.us) %>% round(4) %>% paste("Balanced accuracy (undersampled)", .)
+table(observed.us, prediction.us)
+
+```
+
+
+
+
+
+
+# LDA with oversampled balancing
+```{r}
+# get the number of the smaller group of classes
+n.max <- max(train %>% filter(Status==1) %>% nrow(), train %>% filter(Status==0) %>% nrow())
+# now sample both groups in the training data and create the undersampled training dataset
+train.os <- rbind(
+  train %>% filter(Status==0) %>% sample_n(n.max, replace = T),
+  train %>% filter(Status==1) %>% sample_n(n.max, replace = T)
+)
+
+```
+
+```{r}
+model.lda.os <- lda(Status~., data=train.os)
+plot(model.lda.os)
+```
+
+```{r}
+prediction.os <- predict(model.lda.os, train)$class
+observed.os <- train$Status
+MR(observed.os, prediction.os) %>% round(4) %>% paste("Misclassification rate (oversampled):", .)
+BACC(observed.os, prediction.os) %>% round(4) %>% paste("Balanced accuracy (oversampled)", .)
+table(observed.os, prediction.os)
+
+```
+
+Interestingly, the oversampling-balanced training data has both a lower 
+misclassification rate AND a lower balanced accuracy, but only by a small margin. 
+Generally, they judged only slightly differently, so I would be reluctant to 
+judge either to be better. Generally, they outperformed the model trained on 
+the unbalanced data. 
+
+
+
+# Quadratic Discriminant Analysis
+```{r}
+
+model.qda <-    qda(Status~., data=train.us)
+model.qda.us <- qda(Status~., data=train.us)
+model.qda.os <- qda(Status~., data=train.os)
+
+yhat.qda <-    predict(model.qda, train)$class
+yhat.qda.us <- predict(model.qda.us, train)$class
+yhat.qda.os <- predict(model.qda.os, train)$class
+
+observed <- train$Status
+
+data.frame(
+  Data=c("Unbalanced", "Undersampling-balanced", "Oversampling-balanced"),
+  `Misclassification Rate` =c(
+    MR(observed, yhat.qda) %>% round(4),
+    MR(observed, yhat.qda.us) %>% round(4),
+    MR(observed, yhat.qda.os) %>% round(4)
+  ),
+  `Balanced Accuracy`=c(
+    BACC(observed, yhat.qda) %>% round(4),
+    BACC(observed, yhat.qda.us) %>% round(4),
+    BACC(observed, yhat.qda.os) %>% round(4)
+  )
+) %>% kable(caption="QDA results")
+
+
+table(observed.os, yhat.qda)
+table(observed.os, yhat.qda.us)
+table(observed.os, yhat.qda.os)
+
+```
+Here again, oversampling has both a higher misclassification rate and a higher balanced 
+accuracy than the other methods. The undersampling-balanced model performed equally 
+as the unbalanced model. 
+
+
+
+# Regularized Discrimant Analysis
+
+
+```{r}
+
+model.rda <- rda(Status~., data=train.us)
+model.rda.us <- rda(Status~., data=train.us)
+model.rda.os <- rda(Status~., data=train.os)
+
+yhat.rda <- predict(model.rda, train)$class
+yhat.rda.us <- predict(model.rda.us, train)$class
+yhat.rda.os <- predict(model.rda.os, train)$class
+
+observed <- train$Status
+
+data.frame(
+  Data=c("Unbalanced", "Undersampling-balanced", "Oversampling-balanced"),
+  `Misclassification Rate` =c(
+    MR(observed, yhat.rda) %>% round(4),
+    MR(observed, yhat.rda.us) %>% round(4),
+    MR(observed, yhat.rda.os) %>% round(4)
+  ),
+  `Balanced Accuracy`=c(
+    BACC(observed, yhat.rda) %>% round(4),
+    BACC(observed, yhat.rda.us) %>% round(4),
+    BACC(observed, yhat.rda.os) %>% round(4)
+  ),
+  Gamma=c(
+    model.rda$regularization[1], 
+    model.rda.us$regularization[1], 
+    model.rda.os$regularization[1]
+  ),
+  Lambda=c(
+    model.rda$regularization[2], 
+    model.rda.us$regularization[2], 
+    model.rda.os$regularization[2]
+  )
+) %>% kable(caption="rda results")
+
+
+table(observed.os, yhat.rda)
+table(observed.os, yhat.rda.us)
+table(observed.os, yhat.rda.os)
+
+# ?qda
+
+```
+Both balanced models, again, have higher misclassifciation rates and balanced 
+accuracies than the model trained on the unbalanced data.  
+The balanced accuracy of the oversampling-balanced model this time around 
+has a higher advantage on the other's than in the previous methods.  
+
+The hyperparameters `lambda` and `gamma` determine the assumptions made about the 
+covariances of the different groups and how they interact.  
+
+We did not specify any values for the parameters, 
+so the function uses simulated annealing to tune them to minimize the misclassification rate.  
+
+In all 3 cases, lambda was very high, meaning that generally the models shrink the 
+covariance matrices down to be diagonal and assume common covariance across the 2 groups.  
+Except for the oversampling-balanced dataset model, the models also converge at a high 
+gamma, meaning they assume a linear independence of the variables, so they are not correlated.  
+For the oversampling-balanced dataset model, gamma was = 0.6, so the model assumed 
+some linear dependence between the variables, but tended more to independence. 
+

@@ -1,0 +1,322 @@
+---
+title: "Exercise 7"
+author: "Nikolaus Czernin"
+output: pdf_document
+fig_width: 6 
+fig_height: 6
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+library("knitr")
+library("ROCit")
+library("ISLR")
+library("klaR")
+library("glmnet")
+
+library("tidyverse")
+
+set.seed(11721138)
+```
+
+```{r}
+eval_ <- function(y, yhat){
+  conf.mat <- table(y, yhat)
+  TP <- conf.mat[2, 2] 
+  FP <- conf.mat[1, 2] 
+  FN <- conf.mat[2, 1] 
+  TN <- conf.mat[1, 1] 
+  return (list(TP=TP, FP=FP, FN=FN, TN=TN))
+}
+
+# misclassification rate: (FP+FN)/(FP+TN+FN+TP)
+MR <- function(y, yhat){
+  n <- length(y)
+  metrics <- eval_(y, yhat)
+  (metrics$FP + metrics$FN) / n
+}
+
+# balanced accuracy: (TPR+TNR)/2
+BACC <- function(y, yhat){
+  metrics <- eval_(y, yhat)
+  TPR <-  metrics$TP / (metrics$TP + metrics$FN) 
+  TNR <-  metrics$TN / (metrics$TN + metrics$FP) 
+  (TPR + TNR) / 2
+}
+
+```
+
+
+# Task 1
+
+## Loading and preprocessing
+```{r}
+bank <- read_delim("bank.csv", delim=";")
+
+
+# preprocessing
+bank <- bank %>% 
+  dplyr::select(-duration) %>% 
+  mutate(y=ifelse(y=="yes", 1 , 0))
+  
+bank %>% 
+  head(5) %>% 
+  kable()
+
+# there is a strong class imbalance
+label_ratios <- bank %>% 
+  group_by(y) %>% 
+  summarise(n=n()) %>% 
+  mutate(ratio=n/nrow(bank)) %>% 
+  print()
+
+```
+
+## a
+```{r}
+# perform train set split
+n <- 3000
+train_idx <- sample(1:nrow(bank), n, replace=FALSE)
+train <- bank[train_idx, ]
+test <- bank[-train_idx, ]
+
+model.1 <- glm(y ~ ., family="binomial", data=train)
+summary(model.1)
+```
+The dataset contains mostly categorical variables. The model resulting from the 
+algorithm also only determined categorical variables to be significant. 
+The only discrete variable, `balance`, was not found to be significant.  
+Significant variables were being retired, marital status, having a secondary education, 
+having taken a loan, not having contacted via telephone and the probability of a 
+success, as well as some months. 
+
+## b
+When making a prediction without passing "reponse" as the `type` parameter, 
+the function will return numbers on the linear scale, on which we could also 
+find our optimal decision boundary. When passing "reponse" as an arguments, 
+it will return the probability of a class being "yes". 
+```{r}
+
+
+get_decision_boundary <- function(y, yhat){
+  roc2 <- measureit(yhat, y, measure=c("TPR","TNR"))
+  roc2.BACC = (roc2$TPR + roc2$TNR) / 2
+  # find the optimal balanced accuracy
+  optimal_bacc <- which.max(roc2.BACC)
+  # find the cutoff at that balanced accuracy
+  optimal_cutoff <- optimal_bacc %>% roc2$Cutoff[.]
+  # plot all that
+  plot(roc2$Cutoff, roc2.BACC, type = "l", xlab = "Cutoff", ylab = "Balanced Accuracy",
+    main = "Balanced Accuracy vs Cutoff")
+  abline(v=optimal_cutoff, col="red")
+  optimal_cutoff
+}
+
+# make the predictions
+train.yhat <- predict(model.1, train, type="response")
+# aplpy the decision boundary
+optimal_cutoff <- get_decision_boundary(train$y, train.yhat)
+train.yhat.decision <- train.yhat>optimal_cutoff
+
+```
+
+
+```{r}
+# plot the predicitons 
+plot(train$y, train.yhat, ylab="predicted", xlab="observed", 
+     main="Training decision boundary on the training dataset. \nBalanced Accuracy:" %>% paste(BACC(train$y, train.yhat.decision)),
+     col=ifelse(train.yhat>optimal_cutoff, "red", "blue"))
+abline(h=optimal_cutoff)
+```
+
+```{r}
+# make predictions for the test set
+test.yhat <- predict(model.1, test, type="response")
+test.yhat.decision <- test.yhat>optimal_cutoff
+
+# plot the predicitons 
+plot(test$y, test.yhat, ylab="predicted", xlab="observed", 
+     main="Testing decision boundary on the training dataset. \nBalanced Accuracy:" %>% paste(BACC(test$y, test.yhat.decision)),
+     col=ifelse(test.yhat>optimal_cutoff, "red", "blue"))
+abline(h=optimal_cutoff)
+
+```
+
+# c: Applying weights to fight label imbalance
+```{r}
+# compute label weights
+# we do this on the training data only to better simulate a real world example
+# where trainig and test data are fully independent
+train.weights <- train %>% 
+  group_by(y) %>% 
+  mutate(
+    n=n(),
+    weight=1/n
+    ) %>% 
+  .$weight * nrow(train)
+
+model.2 <- glm(y ~ ., family="binomial", data=train, weights = train.weights)
+summary(model.2)
+
+# get the optimal cutoff for the training data BACC
+optimal_cutoff <- get_decision_boundary(train$y, predict(model.2, train, type = "response"))
+
+# make predictions for the test set
+test.yhat <- predict(model.2, test, type="response")
+test.yhat.decision <- test.yhat>optimal_cutoff
+
+# plot the predicitons 
+plot(test$y, test.yhat, ylab="predicted", xlab="observed", 
+     main="Testing decision boundary on the training dataset. \nBalanced Accuracy:" %>% paste(BACC(test$y, test.yhat.decision)),
+     col=ifelse(test.yhat>optimal_cutoff, "red", "blue"))
+abline(h=optimal_cutoff)
+
+```
+I generate weights by getting the inverse class frequencies. 
+The balanced accuracy on the test set does not improve by applying the weights though. 
+
+
+# d: Stepwise regression
+```{r}
+model.2.step <- step(model.2, direction="both")
+
+# get the optimal cutoff for the training data BACC
+optimal_cutoff <- get_decision_boundary(train$y, predict(model.2.step, train, type = "response"))
+
+# make predictions for the test set
+# make predictions for the test set
+test.yhat <- predict(model.2.step, newdata=test, type="response")
+test.yhat.decision <- test.yhat>optimal_cutoff
+
+# plot the predicitons 
+plot(test$y, test.yhat, ylab="predicted", xlab="observed", 
+     main="Testing decision boundary on the training dataset. \nBalanced Accuracy:" %>% 
+       paste(BACC(test$y, test.yhat.decision)),
+     col=ifelse(test.yhat>optimal_cutoff, "red", "blue"))
+abline(h=optimal_cutoff)
+
+```
+
+The stepwise variable selection made a miniscule improvement on the weighted model, 
+but the balanced accuracy of the first model is still unbeaten. 
+
+
+
+# Task 2
+```{r}
+train <- Khan$xtrain %>% as.data.frame()
+test <- Khan$xtest %>% as.data.frame()
+train$y <- Khan$ytrain
+test$y <- Khan$ytest
+summary(train[,1:5])
+```
+
+all fail and take very long to do that. 
+```{r}
+# eval_model <- function(model){
+#   rda_predictions <- predict(model, newdata = test)
+#   confusion_matrix <- table(Predicted = rda_predictions$class, Actual = test$y)
+#   accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+#   print(accuracy)
+# }
+# 
+# tryCatch({
+#   # LDA
+#   lda_model <- rda(y ~ ., data = train, gamma = 0, lambda = 1)
+#   lda_model %>% print()
+#   eval_model(lda_model)
+# })
+# 
+# tryCatch({
+#   # QDA
+#   qda_model <- rda(y ~ ., data = train, gamma = 0, lambda = 0)
+#   qda_model %>% print()
+#   eval_model(qda_model)
+# })
+# 
+# tryCatch({
+#   # RDA
+#   qda_model <- rda(y ~ ., data = train, gamma = 0.5, lambda = 0.5)
+#   qda_model %>% print()
+#   eval_model(qda_model)
+# })
+
+
+```
+I commented out the code to test the LDA, QDA and RDA functions, because they 
+
+LDA does not work because the matrix is apparently exploding upon inverting and becoming singular. 
+It has a misclassification rate of 100%.  
+Same with QDA.  
+Picking a gamma and lambda at 0.5 also did not help. 
+
+
+```{r}
+model.cv <- cv.glmnet(train %>% dplyr::select(-y) %>% as.matrix(), train$y %>% as.factor(), 
+                      family="multinomial", 
+                      type.measure = "class"
+                      )
+model.cv %>% plot(main=model.cv$lambda.1se %>% round(7) %>% paste("Optimal lambda (right dotted line):", ., "\n"))
+
+# model.cv$nzero
+```
+This function now minimizes the negative log likelyhood of the logistic regression 
+and also the regularization term, independent on the parameter $\lambda$.  
+The algorithm selected 9 parameters by the 1-standard-error rule.  
+The algorithm issues a warning, that a binomial class with fewer than 8 observations 
+makes it unstable. 
+
+
+## c: Getting the coefficients
+```{r}
+coef(model.cv,s="lambda.1se") %>% length()
+
+coeffs_1se <- coef(model.cv, s = "lambda.1se")
+contributing_vars <- lapply(seq_along(coeffs_1se), function(class_index) {
+  coefs_matrix <- as.matrix(coeffs_1se[[class_index]])  
+  non_zero_vars <- rownames(coefs_matrix)[coefs_matrix != 0]
+  list(Class = paste("Class", class_index), Variables = non_zero_vars)
+})
+for (class_info in contributing_vars) {
+  class_info$Class %>% print()
+  "Selected vars:" %>% print()
+  paste(class_info$Variables, collapse = ", ") %>% print()
+}
+
+```
+
+## d: Plotting variables against group membership
+
+```{r}
+plot(train$V248, train$y, col=train$y, main="Variable V2022 (relevant to group 1")
+plot(train$V2022, train$y, col=train$y, main="Variable V2022 (relevant to group 2")
+plot(train$V174, train$y, col=train$y, main="Variable V2022 (relevant to group 3")
+plot(train$V2046, train$y, col=train$y, main="Variable V2022 (relevant to group 4")
+```
+There is some overlap, but in the plots we can see some difference in group membership 
+when plotting it against variables relevant to the groups. 
+
+
+## Making predictions
+
+```{r}
+yhat.all <- predict(model.cv,  newx = test %>% dplyr::select(-y) %>% as.matrix(), s = "lambda.1se", type="response")
+yhat <- apply(yhat.all, 1, which.max) 
+
+cm <- table(Predicted = yhat, Actual = test$y)
+cm
+
+
+```
+## Get misclassification error
+```{r}
+ME <- 1 - sum(diag(cm)) / sum(cm)
+print(ME %>% paste("Misclassification rate:", .))
+
+```
+Quite surprisingly, I get a 100% accuracy on the test set, which is suspicious.
+
+
+

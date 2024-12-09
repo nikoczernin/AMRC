@@ -140,7 +140,7 @@ rather than 0.2 like I thought earlier.
 
 ```{r}
 roc2 <- measureit(yhat, train$Status, measure=c("TPR","TNR"))
-roc2.BACC = (roc2$TP + roc2$TN) / 2
+roc2.BACC = (roc2$TPR + roc2$TNR) / 2
 
 
 optimal_bacc <- which.max(roc2.BACC) 

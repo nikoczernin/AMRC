@@ -105,7 +105,7 @@ BACC(observed, prediction) %>% round(4) %>% paste("Balanced accuracy", .)
 table(observed, prediction)
 
 ```
-
+With LDA we presume equal groups sizes. 
 
 # LDA with undersampled balancing
 ```{r}
@@ -179,11 +179,11 @@ model.qda <-    qda(Status~., data=train.us)
 model.qda.us <- qda(Status~., data=train.us)
 model.qda.os <- qda(Status~., data=train.os)
 
-yhat.qda <-    predict(model.qda, train)$class
-yhat.qda.us <- predict(model.qda.us, train)$class
-yhat.qda.os <- predict(model.qda.os, train)$class
+yhat.qda <-    predict(model.qda,    test)$class
+yhat.qda.us <- predict(model.qda.us, test)$class
+yhat.qda.os <- predict(model.qda.os, test)$class
 
-observed <- train$Status
+observed <- test$Status
 
 data.frame(
   Data=c("Unbalanced", "Undersampling-balanced", "Oversampling-balanced"),
@@ -200,9 +200,9 @@ data.frame(
 ) %>% kable(caption="QDA results")
 
 
-table(observed.os, yhat.qda)
-table(observed.os, yhat.qda.us)
-table(observed.os, yhat.qda.os)
+table(observed, yhat.qda)
+table(observed, yhat.qda.us)
+table(observed, yhat.qda.os)
 
 ```
 Here again, oversampling has both a higher misclassification rate and a higher balanced 
@@ -251,11 +251,10 @@ data.frame(
 ) %>% kable(caption="rda results")
 
 
-table(observed.os, yhat.rda)
-table(observed.os, yhat.rda.us)
-table(observed.os, yhat.rda.os)
+table(observed, yhat.rda)
+table(observed, yhat.rda.us)
+table(observed, yhat.rda.os)
 
-# ?qda
 
 ```
 Both balanced models, again, have higher misclassifciation rates and balanced 

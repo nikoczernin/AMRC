@@ -1,0 +1,184 @@
+---
+title: "Exercise 8"
+author: "Nikolaus Czernin"
+output: pdf_document
+fig_width: 6 
+fig_height: 6
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+# library("MASS")
+library("tidyverse")
+# install.packages("ROCit")
+library("ROCit")
+library("knitr")
+library("glmnet")
+
+library(mgcv)
+
+set.seed(11721138)
+```
+# Loading & Preprocessing
+```{r}
+data <- Diabetes
+# ?Diabetes
+
+data <- data %>% 
+  mutate(dtest = ifelse(dtest == "+", 1, 0)) %>% 
+  select(dtest, everything(), 
+         -id, 
+         -waist, 
+         -hip, 
+         -height, 
+         -weight, 
+         -hdl, 
+         -chol, 
+         -time.ppn) %>%
+  # select(dtest, bmi, whr, ratio, stab.glu, age, glyhb) %>%
+  na.omit() %>% 
+  print()
+```
+
+I dropped some variables:
+
+-   id because it is just an identifier for the row
+
+-   whr is perfectly dependent on two other
+    variables, hip and waist, which i can therefore remove
+
+-   bmi for the same reason, it is calculated from weight and height, which is remove
+
+-   ratio for the same reason, it includes the information of cholesterol and hdl, which i remove
+
+```{r}
+train.idx <- sample(1:nrow(data), nrow(data)%/%4*3)
+train <- data[train.idx, ]
+test <- data[-train.idx, ]
+```
+
+
+# 1. Logistic Regression
+```{r}
+model.lr <- glm(dtest ~., family=binomial, data=train)
+model.lr
+
+```
+
+
+```{r}
+yhat <- predict(model.lr, newdata = test, type="response") %>% print()
+predicted <- yhat %>% round()
+observed <-test$dtest
+cm <- table(predicted, observed) %>% print()
+MCR <- sum(cm[1, 2], cm[2, 1]) / sum(cm)
+print(paste("Misclassification rate:", MCR %>% round(4)))
+
+```
+When fitting the model I got a warning that the model did not converge and that 
+fitted probabilities of 0 and 1 occurred. This signifies that there is some crass 
+overfitting or strong dependencies between predictors. 
+
+# 2. Sparse logistic regression
+```{r}
+x <- train[,-1] %>% makeX()
+y <- train[,1]  
+model.slr <- cv.glmnet(x, y, family = "binomial")
+
+yhat <- predict(model.slr, newx = test[,-1] %>% makeX(), type="response")
+predicted <- yhat %>% round()
+observed <-test$dtest
+cm <- table(predicted, observed) %>% print()
+MCR <- sum(cm[1, 2], cm[2, 1]) / sum(cm)
+print(paste("Misclassification rate:", MCR %>% round(4)))
+
+```
+Now we have no misclassifications at all. 
+
+# 2. Generalized additive models
+## a
+
+```{r}
+m1 <- gam(dtest ~ 
+            s(ratio) +
+            s(stab.glu) +
+            s(glyhb) +
+            s(age) +
+            s(bp.1s) +
+            s(bp.1d) +
+            s(bp.2s) +
+            s(bp.2d) +
+            s(bmi) 
+            location +
+            gender +
+            frame +
+            s(whr)
+          , data=train, family="binomial")
+```
+By selecting the compound variables bmi and whr instead of their components (weight & height for the bmi for example) I avoided having to limit the degrees of freedom of the smoothing splines.  
+
+
+## c
+```{r}
+m1 %>% summary()
+
+```
+None of the computed computed smoothing splines seem to be significant though. 
+From looking at the plots printed below and the estimated degrees of freedom we can 
+see that the splines are all linear, which kind of defeats the purpose of using GAMs in the first place. 
+
+## d
+
+```{r}
+m1 %>% plot(shade=TRUE,shade.col="yellow")
+
+```
+## e
+```{r}
+yhat <- predict(m1, se.fit=TRUE, test[,-1], type="response")
+
+predicted <- yhat %>% .$fit %>% round()
+observed <-test$dtest
+cm <- table(predicted, observed) %>% print()
+MCR <- sum(cm[1, 2], cm[2, 1]) / sum(cm)
+print(paste("Misclassification rate:", MCR %>% round(4)))
+
+```
+
+```{r}
+?step.gam
+```
+
+# g: Fitting with other variables
+```{r}
+m2 <- gam(dtest ~ 
+            s(ratio) +
+            # s(stab.glu) +
+            # s(glyhb) +
+            s(age) +
+            # s(bp.1s) +
+            # s(bp.1d) +
+            # s(bp.2s) +
+            # s(bp.2d) +
+            # s(bmi) +
+            # location +
+            # gender +
+            # frame +
+            s(whr)
+          , data=train, family="binomial")
+m2 %>% summary()
+m2 %>% plot(shade=TRUE,shade.col="yellow")
+
+yhat <- predict(m2, se.fit=TRUE, test[,-1], type="response")
+predicted <- yhat %>% .$fit %>% round()
+observed <-test$dtest
+cm <- table(predicted, observed) %>% print()
+MCR <- sum(cm[1, 2], cm[2, 1]) / sum(cm)
+print(paste("Misclassification rate:", MCR %>% round(4)))
+
+```
+If I select fewer variables, they end up being significant, some of them even 
+not just linear. The misclassification rate in turn also goes up a little, but 
+still remains super low. 

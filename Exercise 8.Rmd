@@ -107,11 +107,17 @@ training.data <- data.frame(splines.temp.train$X, Ozone=train$Ozone)
 model1 <- lm(Ozone ~ ., data=training.data)
 summary(model1)
 # make predictions
-train.idx <- train$Temp %>% sort(index.return=TRUE) %>% .$ix
 test.idx <- test$Temp %>% sort(index.return=TRUE) %>% .$ix
 yhat.train <- predict(model1, training.data)
 
+
+
+
+train.idx <- train$Temp %>% sort(index.return=TRUE) %>% .$ix
 plot(train$Temp[train.idx], yhat.train[train.idx], ylab="Predictions", main="Predicted ozone concentration per temperature", col="blue", type="l")
+points(train$Temp, train$Ozone, cex=.001, pch=20, col="blue")
+
+
 ```
 
 # Task 3: Plotting predictions vs observations
@@ -124,6 +130,8 @@ plot(train$Temp[train.idx], yhat.train[train.idx], ylab="Predictions", main="Pre
 test.data <- data.frame(splines.temp.test$X, Ozone=test$Ozone)
 yhat.test <- predict(model1, test.data)
 lines(test$Temp[test.idx], yhat.test[test.idx], col="green")
+points(train$Temp, train$Ozone, cex=.001, pch=20, col="blue")
+points(test$Temp, test$Ozone, cex=.001, pch=20, col="green")
 
 ```
 
@@ -146,6 +154,10 @@ newtemp %>%
   rename_all(str_replace_all, "V", "X") %>% 
   predict(model1, .) %>% 
   lines(newtemp, ., col="orange")
+
+points(train$Temp, train$Ozone, cex=.001, pch=20, col="blue")
+points(test$Temp, test$Ozone, cex=.001, pch=20, col="green")
+
 ```
 
 # Task 5: Knots at custom points
@@ -203,6 +215,8 @@ newtemp %>%
 
 lines(train$Temp[train.idx], yhat.train[train.idx], col="blue")
 lines(test$Temp[test.idx], yhat.test[test.idx], col="green")
+points(train$Temp, train$Ozone, cex=.001, pch=20, col="blue")
+points(test$Temp, test$Ozone, cex=.001, pch=20, col="green")
 
 ```
 
@@ -240,6 +254,8 @@ newtemp %>%
 
 lines(train$Temp[train.idx], yhat.train[train.idx], col="blue")
 lines(test$Temp[test.idx], yhat.test[test.idx], col="green")
+points(train$Temp, train$Ozone, cex=.001, pch=20, col="blue")
+points(test$Temp, test$Ozone, cex=.001, pch=20, col="green")
 
 ```
 

@@ -182,3 +182,8 @@ print(paste("Misclassification rate:", MCR %>% round(4)))
 If I select fewer variables, they end up being significant, some of them even 
 not just linear. The misclassification rate in turn also goes up a little, but 
 still remains super low. 
+
+
+
+
+

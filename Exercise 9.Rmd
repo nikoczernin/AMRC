@@ -1,5 +1,5 @@
 ---
-title: "Exercise 8"
+title: "Exercise 9"
 author: "Nikolaus Czernin"
 output: pdf_document
 fig_width: 6 
@@ -15,6 +15,7 @@ library("tidyverse")
 # install.packages("ROCit")
 library("ROCit")
 library("knitr")
+# install.packages("glmnet")
 library("glmnet")
 
 library(mgcv)
@@ -38,8 +39,8 @@ data <- data %>%
          -chol, 
          -time.ppn) %>%
   # select(dtest, bmi, whr, ratio, stab.glu, age, glyhb) %>%
-  na.omit() %>% 
-  print()
+  na.omit() 
+
 ```
 
 I dropped some variables:
@@ -110,7 +111,7 @@ m1 <- gam(dtest ~
             s(bp.1d) +
             s(bp.2s) +
             s(bp.2d) +
-            s(bmi) 
+            s(bmi) +
             location +
             gender +
             frame +
@@ -151,7 +152,7 @@ print(paste("Misclassification rate:", MCR %>% round(4)))
 ?step.gam
 ```
 
-# g: Fitting with other variables
+# e2: Fitting with fewer variables
 ```{r}
 m2 <- gam(dtest ~ 
             s(ratio) +
@@ -186,4 +187,59 @@ still remains super low.
 
 
 
+# f: modelling via step.gam
+```{r}
+m3 <- gam(dtest ~ 
+            s(ratio,bs="ts") +
+            s(stab.glu,bs="ts") +
+            s(glyhb,bs="ts") +
+            s(age) +
+            s(bp.1s,bs="ts") +
+            s(bp.1d,bs="ts") +
+            s(bp.2s,bs="ts") +
+            s(bp.2d,bs="ts") +
+            s(bmi,bs="ts") +
+            location +
+            gender +
+            frame +
+            s(whr,bs="ts")
+          , data=train, family="binomial")
+m3 %>% summary()
+m3 %>% plot(shade=TRUE,shade.col="yellow")
+
+yhat <- predict(m3, se.fit=TRUE, test[,-1], type="response")
+predicted <- yhat %>% .$fit %>% round()
+observed <-test$dtest
+cm <- table(predicted, observed) %>% print()
+MCR <- sum(cm[1, 2], cm[2, 1]) / sum(cm)
+print(paste("Misclassification rate:", MCR %>% round(4)))
+
+```
+When using the thin splate regression spline smoother, most variables have 
+estimated degrees of freedom of nearly zero, merely glyhb and age seem to have been "selected".  
+The model still has a misclassification rate of 0 though. 
+When using the cubic regression splines, the same variables are selected. 
+
+
+
+
+# g: Fitting with the variables selected by "step.gam"
+```{r}
+m5 <- gam(dtest ~ 
+            s(glyhb) +
+            s(age) 
+          , data=train, family="binomial")
+m5 %>% summary()
+m5 %>% plot(shade=TRUE,shade.col="yellow")
+
+yhat <- predict(m5, se.fit=TRUE, test[,-1], type="response")
+predicted <- yhat %>% .$fit %>% round()
+observed <-test$dtest
+cm <- table(predicted, observed) %>% print()
+MCR <- sum(cm[1, 2], cm[2, 1]) / sum(cm)
+print(paste("Misclassification rate:", MCR %>% round(4)))
+
+```
+When selecting only the two variables manually, I get constant estiamted 
+degrees of freedom again, with a misclassification rate of 0, again. 
 

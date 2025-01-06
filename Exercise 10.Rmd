@@ -1,0 +1,165 @@
+---
+title: "Exercise 10"
+author: "Nikolaus Czernin"
+output: pdf_document
+fig_width: 6 
+fig_height: 6
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+library("tidyverse")
+library("knitr")
+library(rpart)
+library(mgcv)
+library("ISLR")
+
+set.seed(11721138)
+```
+
+# Loading & Preprocessing
+
+```{r}
+data("Caravan")
+
+Caravan %>% head()
+Caravan <- Caravan %>%
+  mutate(Purchase = ifelse(grepl("Yes", Purchase), 1, 0))
+  # mutate(Purchase = factor(Purchase))
+# Caravan$Purchase
+
+N <- nrow(Caravan)
+train_idx <- sample(1:N, N%/%3*2)
+train <- Caravan[train_idx,]
+test <- Caravan[-train_idx,]
+
+```
+
+```{r}
+eval_ <- function(y, yhat){
+  conf.mat <- table(y, yhat)
+  TP <- conf.mat[2, 2] 
+  FP <- conf.mat[1, 2] 
+  FN <- conf.mat[2, 1] 
+  TN <- conf.mat[1, 1] 
+  return (list(TP=TP, FP=FP, FN=FN, TN=TN))
+}
+
+# RMSE
+RMSE <- function(y, yhat){
+  (y - yhat)^2 %>% mean() %>% sqrt()
+}
+
+# balanced accuracy: (TPR+TNR)/2
+BACC <- function(y, yhat){
+  metrics <- eval_(y, yhat)
+  TPR <-  metrics$TP / (metrics$TP + metrics$FN) 
+  TNR <-  metrics$TN / (metrics$TN + metrics$FP) 
+  (TPR + TNR) / 2
+}
+
+```
+
+# Task 1
+
+## Initial Tree
+
+```{r, fig.height=8}
+t0 <- rpart(Purchase~., data=train, cp=0.001, xval=20)
+t0
+t0 %>% plot()
+t0 %>% text()
+
+```
+
+The tree as a whole is too complex to interpret fully. In the first
+node, if `PPERSAUT<5.5`, the left branch will be evaluated further,
+otherwise the right branch.
+
+## Predictions
+
+```{r}
+t0_yhat <- predict(t0, newdata=test, type = "vector")
+boundary <- 0.5
+predicted <- ifelse(t0_yhat >= boundary, 1, 0)
+table(test$Purchase, predicted)
+print("Decision boundary:" %>% paste(boundary %>% round(4)))
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+```
+
+```{r}
+t0_yhat <- predict(t0, newdata=test, type = "vector")
+boundary <- mean(t0_yhat)
+predicted <- ifelse(t0_yhat >= boundary, 1, 0)
+table(test$Purchase, predicted)
+print("Decision boundary:" %>% paste(boundary %>% round(4)))
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+```
+## Pruning the tree
+
+The decision boundary at 0.5 yields a accuracy below 0.5. Using the mean
+prediction as decision boundary gets too low a boundary in my opinion
+though. I blame this on class imbalance, the failures outnumber the
+successes tenfold.
+```{r}
+plotcp(t0)
+
+```
+
+The plot suggests the optimal tree complexity to be ~0.006, judging by the 1se-rule.
+```{r, fig.height=7}
+t1 <- prune(t0, cp=0.006)
+t1 %>% plot()
+t1 %>% text()
+
+t1_yhat <- predict(t1, newdata=test, type = "vector")
+boundary <- mean(t1_yhat)
+predicted <- ifelse(t1_yhat >= boundary, 1, 0)
+table(test$Purchase, predicted)
+print("Decision boundary:" %>% paste(boundary %>% round(4)))
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+
+```
+The tree was pruned nicely, now is more leggible. Also the accuracy increased, 
+though the decision boundary is still very low. 
+
+
+## Weighting the observations 
+I apply the ratio of the two classes and use them as weights. 
+```{r}
+weights <- ifelse(train$Purchase == 1, 1 / sum(train$Purchase == 1), 1 / sum(train$Purchase == 0))
+
+t2 <- rpart(Purchase~., data=train, cp=0.001, xval=20, weights = weights)
+
+t2_yhat <- predict(t2, newdata=test, type = "vector")
+boundary <- mean(t2_yhat)
+predicted <- ifelse(t2_yhat >= boundary, 1, 0)
+table(test$Purchase, predicted)
+print("Decision boundary:" %>% paste(boundary %>% round(4)))
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+
+
+
+plotcp(t2)
+t3 <- prune(t2, cp=0.0036)
+t3 %>% plot()
+t3 %>% text()
+
+t3_yhat <- predict(t3, newdata=test, type = "vector")
+boundary <- mean(t3_yhat)
+predicted <- ifelse(t3_yhat >= boundary, 1, 0)
+table(test$Purchase, predicted)
+print("Decision boundary:" %>% paste(boundary %>% round(4)))
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+
+```
+Applying the weights disappointingly did not improve the performance of the tree, 
+even after pruning to the 1se-rule. 
+
+
+
+
+
+

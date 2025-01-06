@@ -188,7 +188,7 @@ still remains super low.
 
 
 # f: modelling via step.gam
-```{r}
+```{r} 
 m3 <- gam(dtest ~ 
             s(ratio,bs="ts") +
             s(stab.glu,bs="ts") +

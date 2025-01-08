@@ -15,6 +15,8 @@ library("knitr")
 library(rpart)
 library(mgcv)
 library("ISLR")
+# install.packages("randomForest")
+library("randomForest")
 
 set.seed(11721138)
 ```
@@ -30,10 +32,13 @@ Caravan <- Caravan %>%
   # mutate(Purchase = factor(Purchase))
 # Caravan$Purchase
 
+
+
 N <- nrow(Caravan)
 train_idx <- sample(1:N, N%/%3*2)
 train <- Caravan[train_idx,]
 test <- Caravan[-train_idx,]
+
 
 ```
 
@@ -67,7 +72,7 @@ BACC <- function(y, yhat){
 ## Initial Tree
 
 ```{r, fig.height=8}
-t0 <- rpart(Purchase~., data=train, cp=0.001, xval=20)
+t0 <- rpart(Purchase~., data=train, cp=0.001, xval=20, method="class")
 t0
 t0 %>% plot()
 t0 %>% text()
@@ -76,33 +81,19 @@ t0 %>% text()
 
 The tree as a whole is too complex to interpret fully. In the first
 node, if `PPERSAUT<5.5`, the left branch will be evaluated further,
-otherwise the right branch.
+otherwise the right branch. A 1 at a leaf node indicates predicting a purchase, 
+otherwise no purchase. 
 
 ## Predictions
 
 ```{r}
-t0_yhat <- predict(t0, newdata=test, type = "vector")
-boundary <- 0.5
-predicted <- ifelse(t0_yhat >= boundary, 1, 0)
+predicted <- predict(t0, newdata=test, type = "vector")
 table(test$Purchase, predicted)
-print("Decision boundary:" %>% paste(boundary %>% round(4)))
 print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
 ```
 
-```{r}
-t0_yhat <- predict(t0, newdata=test, type = "vector")
-boundary <- mean(t0_yhat)
-predicted <- ifelse(t0_yhat >= boundary, 1, 0)
-table(test$Purchase, predicted)
-print("Decision boundary:" %>% paste(boundary %>% round(4)))
-print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
-```
 ## Pruning the tree
 
-The decision boundary at 0.5 yields a accuracy below 0.5. Using the mean
-prediction as decision boundary gets too low a boundary in my opinion
-though. I blame this on class imbalance, the failures outnumber the
-successes tenfold.
 ```{r}
 plotcp(t0)
 
@@ -110,20 +101,16 @@ plotcp(t0)
 
 The plot suggests the optimal tree complexity to be ~0.006, judging by the 1se-rule.
 ```{r, fig.height=7}
-t1 <- prune(t0, cp=0.006)
+t1 <- prune(t0, cp=0.0051)
 t1 %>% plot()
 t1 %>% text()
 
-t1_yhat <- predict(t1, newdata=test, type = "vector")
-boundary <- mean(t1_yhat)
-predicted <- ifelse(t1_yhat >= boundary, 1, 0)
+predicted <- predict(t1, newdata=test, type = "vector")
 table(test$Purchase, predicted)
-print("Decision boundary:" %>% paste(boundary %>% round(4)))
 print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
 
 ```
-The tree was pruned nicely, now is more leggible. Also the accuracy increased, 
-though the decision boundary is still very low. 
+The tree was pruned nicely, now is more leggible. 
 
 
 ## Weighting the observations 
@@ -131,13 +118,10 @@ I apply the ratio of the two classes and use them as weights.
 ```{r}
 weights <- ifelse(train$Purchase == 1, 1 / sum(train$Purchase == 1), 1 / sum(train$Purchase == 0))
 
-t2 <- rpart(Purchase~., data=train, cp=0.001, xval=20, weights = weights)
+t2 <- rpart(Purchase~., data=train, cp=0.001, xval=20, weights = weights, method="class")
 
-t2_yhat <- predict(t2, newdata=test, type = "vector")
-boundary <- mean(t2_yhat)
-predicted <- ifelse(t2_yhat >= boundary, 1, 0)
+predicted <- predict(t2, newdata=test, type = "vector")
 table(test$Purchase, predicted)
-print("Decision boundary:" %>% paste(boundary %>% round(4)))
 print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
 
 
@@ -147,11 +131,8 @@ t3 <- prune(t2, cp=0.0036)
 t3 %>% plot()
 t3 %>% text()
 
-t3_yhat <- predict(t3, newdata=test, type = "vector")
-boundary <- mean(t3_yhat)
-predicted <- ifelse(t3_yhat >= boundary, 1, 0)
+predicted <- predict(t3, newdata=test, type = "vector")
 table(test$Purchase, predicted)
-print("Decision boundary:" %>% paste(boundary %>% round(4)))
 print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
 
 ```
@@ -159,7 +140,128 @@ Applying the weights disappointingly did not improve the performance of the tree
 even after pruning to the 1se-rule. 
 
 
+# Task 2: Random forests
+## a
+```{r}
+train <- train %>% mutate(Purchase=Purchase %>% as.factor())
+rf <- randomForest(Purchase~., data=train, importance=T)
+
+test <- test %>% mutate(Purchase=Purchase %>% as.factor)
+predicted <- predict(rf, newdata=test)
+ct <- table(test$Purchase, predicted)
+ct
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+
+```
+## b
+```{r}
+rf
+plot(rf)
+```
+The plot shows 3 lines. 
+Across the 500 trees the algorithm created, after about ~75 trees, 
+the relative out-of-bag error seems to be kind of stabilized. 
+The red and green line are for the two classes, Purchase being either 1 or 0, 
+the black line is the average of that. 
+The green line shows, that for one of the classes, presumably the successes, 
+nearly 100% of the classifications are false negatives, which is quite bad. 
+
+```{r, fig.height=8}
+varImpPlot(rf)
+
+```
 
 
+## c
 
+samplsize is by default 63% of the number of observations, which is roughly 2400. 
+It is the number of samples drawn from the training dataset to build a single tree, 
+with replacement that is. 
 
+```{r}
+rf2 <- randomForest(Purchase~., data=train, importance=T, sampsize=50)
+plot(rf2)
+rf2
+
+predicted <- predict(rf2, newdata=test)
+ct <- table(test$Purchase, predicted)
+ct
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+```
+
+When picking an in comparison low sampsize, in this case 50, we get a majority class 
+classifier.  
+
+You can also pass a vector of strats to the parameter to balance the classes. 
+So instead of passig 2400 random samples, lets instead pass 140 successes and 2200 failures, which reflects the ratio the 2 classes have. 
+
+```{r}
+# 3653 vs 227 from total of 3880
+
+rf3 <- randomForest(Purchase~., data=train, importance=T, sampsize=c(2200, 140))
+plot(rf3)
+rf3
+
+predicted <- predict(rf3, newdata=test)
+ct <- table(test$Purchase, predicted)
+ct
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+
+```
+The real way to adjust the sample picking to class weights is the classwt 
+parameter tough. 
+
+```{r}
+rf4 <- randomForest(Purchase~., data=train, importance=T, classwt = 1 / table(train$Purchase))
+plot(rf4)
+rf4
+
+predicted <- predict(rf4, newdata=test)
+ct <- table(test$Purchase, predicted)
+ct
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+
+```
+
+If this does not help enough, there is the third parameter, cutoff, 
+which is a ratio vector that ajusts the model's sensitivity to each class. 
+Here we lower the threshold and thus increase the sensitivity for/to the success class:
+
+```{r, fig.height=7}
+rf5 <- randomForest(Purchase~., data=train, importance=T, cutoff=c(9/10, 1/10))
+
+plot(rf5)
+rf5
+
+predicted <- predict(rf5, newdata=test)
+ct <- table(test$Purchase, predicted)
+ct
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+
+```
+This is the first adjustment that actually led to a noticeable increase in balanced accuracy.  The green line in the plot finally gets lowered down, which reflects the model 
+picking the success class more often and lowering the number of false negatives. 
+We end up with a strong increase of false positives too tough. 
+
+```{r, fig.height=7}
+rf6 <- randomForest(Purchase~., data=train, importance=T, cutoff=c(19/20, 1/20))
+
+plot(rf6)
+rf6
+
+predicted <- predict(rf6, newdata=test)
+ct <- table(test$Purchase, predicted)
+ct
+print("Balanced accuracy:" %>% paste(BACC(test$Purchase, predicted) %>% round(4)))
+varImpPlot(rf6)
+
+```
+Here I took it even further and lowered the threshold even more than the 
+disparity between the class ratios, which led to even more false positives, 
+but an overall higher balanced accuracy.  
+
+The varimportance plot shows the variables which, when they have been picked, 
+led to a higher predicting accuracy and a stronger decrease of the Gini impurity. 
+The most important variable appears to be MOSTYPE. 
+The left plot actually picked different top predicting variables compared to 
+the random forest model before adjusting the cutoff thresholds. 

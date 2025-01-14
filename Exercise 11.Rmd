@@ -1,0 +1,138 @@
+---
+title: "Exercise 11"
+author: "Nikolaus Czernin"
+output: pdf_document
+fig_width: 6 
+fig_height: 6
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+library("tidyverse")
+library("knitr")
+library("e1071")
+set.seed(11721138)
+```
+
+```{r}
+eval_ <- function(y, yhat){
+  conf.mat <- table(y, yhat)
+  TP <- 0
+  FP <- 0
+  FN <- 0
+  TN <- 0
+  try(TP <- conf.mat[2, 2] )
+  try(FP <- conf.mat[1, 2] )
+  try(FN <- conf.mat[2, 1] )
+  try(TN <- conf.mat[1, 1] )
+  return (list(TP=TP, FP=FP, FN=FN, TN=TN))
+}
+
+# RMSE
+RMSE <- function(y, yhat){
+  (y - yhat)^2 %>% mean() %>% sqrt()
+}
+
+# balanced accuracy: (TPR+TNR)/2
+BACC <- function(y, yhat, r=4){
+  metrics <- eval_(y, yhat)
+  TPR <-  metrics$TP / (metrics$TP + metrics$FN) 
+  TNR <-  metrics$TN / (metrics$TN + metrics$FP) 
+  ((TPR + TNR) / 2) %>% round(r)
+}
+
+```
+
+
+# Loading & Preprocessing
+
+```{r}
+data <- read_delim("bank.csv", delim=";")
+
+
+# preprocessing
+data <- data %>% 
+  dplyr::select(-duration) %>% 
+  mutate(y=ifelse(y=="yes", 1 , 0))
+  
+
+N <- nrow(data)
+train_idx <- sample(1:N, N%/%3*2)
+train <- data[train_idx,]
+test <- data[-train_idx,]
+
+```
+
+# a
+```{r}
+model1 <- svm(y~., data=train, kernel = "radial")
+model1
+prediction <- (predict(model1, newdata = test, type = "class") > 0) %>% as.numeric()
+cf <- table(test$y, prediction) %>% print()
+paste("Balanced Accuracy:", BACC(test$y, prediction))
+```
+
+# b
+```{r}
+tuned.model <- tune.svm(y~., data=train, kernel = "radial", 
+                        cost=c(200, 500, 800),
+                        gamma=c(0.005, 0.01, 0.1)
+                        )
+summary(tuned.model)
+tuned.model %>% plot()
+```
+Ive wanted to do a wide grid-search, but the time to compute exploded. 
+It was faster to manually pluck in different parameter values into svm() 
+and note the params that yield the best BACC. 
+Above is me running just 3 parameters each to show the plot, narrowed down to 
+a small value range by trial and error. 
+
+# c
+```{r}
+# optimal parameters:
+cost <- 500
+gamma <- 0.01
+best.model <- svm(y~., data=train, kernel = "radial", cost=cost, gamma=gamma)
+prediction <- (predict(best.model, newdata = test, type = "class") > 0) %>% as.numeric()
+cf <- table(test$y, prediction) %>% print()
+paste("Balanced Accuracy:", BACC(test$y, prediction))
+```
+The balanced accuracy increased from using those new parameters. I have paid 
+special attention to keeping the false negatives low. Yet, there are still tons 
+of false positives, which I dont mind as much though. 
+
+# d
+```{r}
+
+tuned_model <- tune(
+  svm,
+  y ~ .,
+  data = train,
+  kernel = "radial",
+  tunecontrol = tune.control(sampling = "cross", error.fun = BACC),
+  ranges = list(
+    cost=c(200, 500, 800),
+    gamma=c(0.005, 0.01, 0.1)
+  ),
+  class.weights = c(1, 7) # 7 times as many failures as successes
+)
+best.model.2 <- tuned_model$best.model
+summary(best.model.2)
+
+```
+```{r}
+prediction <- (predict(best.model.2, newdata = test, type = "class") > 0) %>% as.numeric()
+cf <- table(test$y, prediction) %>% print()
+paste("Balanced Accuracy:", BACC(test$y, prediction))
+
+```
+Somehow, the "optimal" model got even worse, it only predicted successes
+
+
+
+
+
+
+
